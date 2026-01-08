@@ -1,0 +1,32 @@
+# ---- Python / Virtualenv ----
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ---- Packaging / build artifacts ----
+*.egg-info/
+dist/
+build/
+
+# ---- Test / coverage artifacts ----
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ---- OS / editor noise ----
+.DS_Store
+Thumbs.db
+
+# ---- Logs / generated outputs ----
+*.log
+reports/
+output/
+out/
+*.json
+*.html
+
+# ---- IDE / editor configs ----
+.vscode/
+.idea/
