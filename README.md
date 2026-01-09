@@ -1,42 +1,73 @@
-﻿# ODAT2 - Operations Data Audit Tool
+﻿# ODAT2 — Operations Data Audit Tool
 
-A command-line tool for validating telecommunications cable design data exported from engineering drawings.
+ODAT2 is a small, **deterministic** command-line tool that validates telecommunications / security cable schedule data exported from engineering drawings (CSV). It produces an auditable issue list (terminal summary + JSON/HTML reports) to reduce rework and improve drawing/data consistency.
 
-## Features
+This project is intentionally **not** a flashy ML demo: it focuses on repeatability, safety, and engineering judgment.
 
-- **Cable Length Validation**: Flag suspiciously long cables (>1000m)
-- **Device Tag Validation**: Catch malformed device identifiers
-- **Connection Integrity**: Verify device references exist
-- **Drawing Cross-Reference**: Ensure devices appear on correct sheets
-- **Multiple Output Formats**: JSON and HTML reports
+## What it checks (today)
 
-## Installation
-```bash
-pip install -e .
-```
+- **Cable sanity**: flags placeholder / suspicious cable lengths.
+- **Device tag format**: flags nonstandard device identifiers.
+- **Topology integrity**: finds orphaned devices and single points of failure in the network graph.
 
-## Usage
-```bash
-odat2 audit sample.csv --out-json report.json
-odat2 audit sample.csv --out-html report.html
-```
+## Why this is relevant to utility telecom / OT work
 
-## Relevant for Utility Telecommunications
+In electric utility environments (substations + office buildings), telecom/security documentation quality matters. ODAT2 models a realistic workflow:
 
-Designed for validating substation telecommunications infrastructure data:
-- AutoCAD drawing exports
-- Cable schedule verification
-- Material management accuracy
-- Quality control before construction
+1. Export a CSV from drawing data (or a cable schedule).
+2. Run deterministic checks (no network calls; local-only).
+3. Review a summary table and a structured report.
 
-## Development
-```bash
-# Install with dev dependencies
-pip install -e .[dev]
+This mirrors the kind of QA/validation engineers do alongside AutoCAD/Visio drawing management.
+
+## Quickstart (Windows 11)
+
+From the repo root:
+
+```powershell
+py -m venv .venv
+\.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -e .
+
+# Run an audit
+odat2 .\sample.csv --out-json odat_report.json
 
 # Run tests
-pytest
-
-# Format code
-black src/
+python -m pip install -e .[dev]
+python -m pytest -q
 ```
+
+If you prefer running without an editable install, you can also set `PYTHONPATH`:
+
+```powershell
+$env:PYTHONPATH=".\src"
+\.\.venv\Scripts\python.exe .\src\odat2\cli.py .\sample.csv --out-json odat_report.json
+```
+
+## Output
+
+- **Terminal**: a safe summary table (counts by severity/type).
+- **JSON**: structured issues for review or downstream tooling.
+- **HTML**: a simple report view (optional).
+
+## Repository layout
+
+```
+src/odat2/          # core package
+  io/               # CSV ingest
+  validators/       # deterministic checks
+  reports/          # JSON/HTML/terminal output
+tests/              # pytest tests
+sample.csv          # sanitized example input
+```
+
+## Security and data handling
+
+See `SECURITY.md`. Short version: **do not** upload proprietary drawings/exports, and prefer summary outputs in sensitive environments.
+
+## Roadmap (small + practical)
+
+- `--counts-only` mode: print summary tables without listing sample issues.
+- Chunked CSV ingest for very large exports.
+- Optional C acceleration for hot paths (counting / scanning) with identical results.
