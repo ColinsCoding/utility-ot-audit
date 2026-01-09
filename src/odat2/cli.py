@@ -5,6 +5,9 @@ from pathlib import Path
 from odat2.audit_engine import AuditEngine
 from odat2.reports.json_report import JSONReporter
 from odat2.reports.html_report import HTMLReporter
+from odat2.reports.terminal_report import print_terminal_summary
+
+import pandas as pd
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -33,7 +36,12 @@ def main(
 
     if out_json:
         JSONReporter().generate(issues, out_json)
-        console.print(f"[green]✓[/green] JSON report saved to: {out_json}")
+        console.print(f"[green]OK[/green] JSON report saved to: {out_json}")
+
+
+
+        rows_processed = len(pd.read_csv(csv_path))
+        print_terminal_summary(issues, rows_processed=rows_processed)
 
     if out_html:
         HTMLReporter().generate(issues, out_html)

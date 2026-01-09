@@ -1,8 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Optional
 
+
+@dataclass(frozen=True)
+class Finding:
+    """
+    A deterministic, auditable issue found during validation.
+    Keep this structure stable so reports/tests don't break.
+    """
+    severity: str           # "ERROR" | "WARN" | "INFO"
+    code: str               # e.g., "DUP001"
+    message: str
+    row_index: Optional[int] = None
+    field: Optional[str] = None
+    value: Optional[str] = None
 
 @dataclass(frozen=True)
 class CableRecord:
