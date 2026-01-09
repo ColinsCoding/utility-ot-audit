@@ -44,4 +44,7 @@ def test_cli_smoke(tmp_path: Path):
     assert "issues" in data
     assert "review_priority_score" in data
     assert "review_priority" in data
+    assert "review_priority_score" in data
+    assert "review_priority" in data
+
 
