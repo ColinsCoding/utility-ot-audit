@@ -16,7 +16,16 @@ def test_cli_smoke(tmp_path: Path):
     env["RICH_FORCE_TERMINAL"] = "0"
 
 
-    cmd = [sys.executable, "src/odat2/cli.py", str(sample), "--out-json", str(out_json)]
+    cmd = [
+        sys.executable,
+        "src/odat2/cli.py",
+        str(sample),
+        "--out-json",
+        str(out_json),
+        "--today",
+        "2026-01-08",
+    ]
+
     r = subprocess.run(
         cmd,
         env=env,
