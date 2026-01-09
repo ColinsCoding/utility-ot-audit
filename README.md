@@ -71,3 +71,13 @@ See `SECURITY.md`. Short version: **do not** upload proprietary drawings/exports
 - `--counts-only` mode: print summary tables without listing sample issues.
 - Chunked CSV ingest for very large exports.
 - Optional C acceleration for hot paths (counting / scanning) with identical results.
+
+## Quick Demo
+
+### FAIL example (risk identified)
+```powershell
+python src/odat2/cli.py sample.csv --today 2026-01-08
+
+## Security
+- Offline CLI (no network calls / no telemetry).
+- Dependency checks: see `docs/pip-audit.txt`. Dependabot is enabled for weekly updates.
