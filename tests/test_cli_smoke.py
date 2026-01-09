@@ -42,3 +42,6 @@ def test_cli_smoke(tmp_path: Path):
     data = json.loads(out_json.read_text(encoding="utf-8"))
     assert "total_issues" in data
     assert "issues" in data
+    assert "review_priority_score" in data
+    assert "review_priority" in data
+
