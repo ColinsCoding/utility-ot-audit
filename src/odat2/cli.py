@@ -1,5 +1,6 @@
 import typer
 from rich.console import Console
+from odat2.validators.review_priority import compute_review_priority
 from pathlib import Path
 
 from odat2.audit_engine import AuditEngine
@@ -38,6 +39,14 @@ def main(
     engine = AuditEngine()
     issues = engine.audit(str(csv_path))
 
+    errors = sum(1 for i in issues if i.severity == "error")
+    warnings = sum(1 for i in issues if i.severity == "warning")
+
+    type_counts = {}
+    for i in issues:
+        t = getattr(i, "issue_type", getattr(i, "type", "unknown"))
+        type_counts[t] = type_counts.get(t, 0) + 1
+
     console.print(f"\n[bold]Audit complete[/bold] — {len(issues)} issue(s) found.")
 
     # Default report names if user asked for format but didn't supply explicit path
@@ -61,6 +70,12 @@ def main(
         half_life_days=doc_half_life_days,
     )
 
+    rps = compute_review_priority(
+        errors=errors,
+        warnings=warnings,
+        issue_type_counts=type_counts,
+        doc_confidence=doc.confidence if doc.status != "UNKNOWN" else 0.0,
+    )
 
     if out_json:
         JSONReporter().generate(issues, out_json)
@@ -70,6 +85,10 @@ def main(
         p = Path(out_json)
         report = json.loads(p.read_text(encoding="utf-8"))
         report["doc_confidence"] = round(doc.confidence, 6)
+        report["review_priority_score"] = rps.score_0_100
+        report["review_priority"] = rps.level
+        report["review_priority_drivers"] = rps.drivers
+
         report["doc_status"] = doc.status
         report["doc_days_since_verified"] = doc.days_since_verified
         p.write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -95,6 +114,8 @@ def main(
 
         print_terminal_summary(issues, rows_processed=rows_processed)
         console.print(f"Doc confidence: {doc.confidence:.2f} ({doc.status})")
+        console.print(f"Review Priority: {rps.level} (RPS={rps.score_0_100:.2f})")
+
 
     if out_html:
         HTMLReporter().generate(issues, out_html)
