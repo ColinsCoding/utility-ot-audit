@@ -1,4 +1,4 @@
-drawing_id,sheet,device_tag,symbol,cable_id,from_device,to_device,location,cable_length_m
-D-100,01,SS-COMM-001,SWITCH,C-001,SS-COMM-001,SS-COMM-002,SUB1,12.5
-D-100,01,SS-COMM-001,SWITCH,C-002,SS-COMM-001,SS-COMM-003,SUB1,9999
-D-100,02,BADTAG,ROUTER,C-003,SS-COMM-004,SS-COMM-005,SUB1,10
+drawing_id,sheet,device_tag,symbol,cable_id,from_device,to_device,location,cable_length_m,last_verified_date
+D-100,01,SS-COMM-001,SWITCH,C-001,SS-COMM-001,SS-COMM-002,SUB1,12.5,2025-12-01
+D-100,01,SS-COMM-001,SWITCH,C-002,SS-COMM-001,SS-COMM-003,SUB1,9999,2024-06-01
+D-100,02,BADTAG,ROUTER,C-003,SS-COMM-004,SS-COMM-005,SUB1,10,
