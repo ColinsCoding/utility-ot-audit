@@ -1,0 +1,4 @@
+drawing_id,sheet,device_tag,symbol,cable_id,from_device,to_device,location,cable_length_m,last_verified_date
+D-200,01,SS-COMM-010,SWITCH,C-010,SS-COMM-010,SS-COMM-011,SUB1,12.0,2026-01-01
+D-200,01,SS-COMM-011,ROUTER,C-011,SS-COMM-011,SS-COMM-012,SUB1,15.5,2026-01-01
+D-200,01,SS-COMM-012,SWITCH,C-012,SS-COMM-012,SS-COMM-010,SUB1,10.2,2026-01-01
