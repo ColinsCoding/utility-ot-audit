@@ -1,0 +1,4 @@
+sensor_id,x,y,range_cells,fov_deg,heading_deg,sensor_type
+CAM_A,5,5,14,90,45,camera
+CAM_B,35,6,14,90,225,camera
+CAM_C,20,22,16,120,270,camera
