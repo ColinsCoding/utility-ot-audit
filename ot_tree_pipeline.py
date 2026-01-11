@@ -2,27 +2,22 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import List
-
-import numpy as np
-import pandas as pd
-
-from sklearn.model_selection import train_test_split
-from sklearn.tree import DecisionTreeClassifier, export_text, export_graphviz, plot_tree
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, roc_auc_score
+from typing import Any, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, roc_auc_score
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier, export_graphviz, export_text, plot_tree
 
-import csv
-from typing import List, Dict, Any
-
-from typing import Tuple
 
 # -----------------------------
 # Determinism helpers
@@ -45,33 +40,73 @@ def generate_ot_telecom_dataset(n: int, seed: int) -> pd.DataFrame:
     device_type = rng.choice(
         ["relay", "switch", "radio", "rtu"],
         size=n,
-        p=[0.45, 0.25, 0.20, 0.10]
+        p=[0.45, 0.25, 0.20, 0.10],
     )
 
     # latent "site quality" induces correlations
     site_quality = rng.normal(0, 1, size=n)
 
-    doc_age_days = np.clip(rng.gamma(shape=2.0, scale=220.0, size=n) - 120 * site_quality, 0, 2000)
-    has_drawing_id = (rng.random(n) < sigmoid(1.2 - 0.002 * doc_age_days + 0.8 * site_quality)).astype(int)
+    doc_age_days = np.clip(
+        rng.gamma(shape=2.0, scale=220.0, size=n) - 120 * site_quality, 0, 2000
+    )
+    has_drawing_id = (
+        (rng.random(n) < sigmoid(1.2 - 0.002 * doc_age_days + 0.8 * site_quality))
+        .astype(int)
+    )
 
     # physical-ish comms
-    fiber_length_m = np.clip(rng.gamma(shape=2.5, scale=120.0, size=n) + 60 * (device_type == "radio"), 5, 1500)
-    snr_db = np.clip(rng.normal(25 + 3 * site_quality - 0.004 * fiber_length_m, 4.0, size=n), 0, 40)
-    packet_loss_pct = np.clip(rng.normal(0.4 - 0.12 * site_quality + 0.03 * (snr_db < 12), 0.25, size=n), 0, 5)
-    latency_ms = np.clip(rng.normal(6 + 4 * (device_type == "radio") + 1.5 * packet_loss_pct, 2.5, size=n), 0, 50)
+    fiber_length_m = np.clip(
+        rng.gamma(shape=2.5, scale=120.0, size=n) + 60 * (device_type == "radio"),
+        5,
+        1500,
+    )
+    snr_db = np.clip(
+        rng.normal(25 + 3 * site_quality - 0.004 * fiber_length_m, 4.0, size=n),
+        0,
+        40,
+    )
+    packet_loss_pct = np.clip(
+        rng.normal(0.4 - 0.12 * site_quality + 0.03 * (snr_db < 12), 0.25, size=n),
+        0,
+        5,
+    )
+    latency_ms = np.clip(
+        rng.normal(6 + 4 * (device_type == "radio") + 1.5 * packet_loss_pct, 2.5, size=n),
+        0,
+        50,
+    )
 
     # design/topology
-    path_diverse = (rng.random(n) < sigmoid(0.6 + 0.7 * site_quality - 0.3 * (device_type == "radio"))).astype(int)
-    vlan_ok = (rng.random(n) < sigmoid(1.0 + 0.5 * site_quality - 0.8 * (device_type == "relay"))).astype(int)
+    path_diverse = (
+        (rng.random(n) < sigmoid(0.6 + 0.7 * site_quality - 0.3 * (device_type == "radio")))
+        .astype(int)
+    )
+    vlan_ok = (
+        (rng.random(n) < sigmoid(1.0 + 0.5 * site_quality - 0.8 * (device_type == "relay")))
+        .astype(int)
+    )
 
     margin_db = np.clip(
-        rng.normal(6 + 2.0 * site_quality + 0.35 * (snr_db - 20) - 1.2 * packet_loss_pct - 0.05 * latency_ms, 3.5, size=n),
-        -15, 20
+        rng.normal(
+            6
+            + 2.0 * site_quality
+            + 0.35 * (snr_db - 20)
+            - 1.2 * packet_loss_pct
+            - 0.05 * latency_ms,
+            3.5,
+            size=n,
+        ),
+        -15,
+        20,
     )
 
     spof_risk_score = np.clip(
-        0.55 * (1 - path_diverse) + 0.25 * (device_type == "switch") + 0.20 * (device_type == "rtu") + rng.normal(0, 0.12, size=n),
-        0, 1
+        0.55 * (1 - path_diverse)
+        + 0.25 * (device_type == "switch")
+        + 0.20 * (device_type == "rtu")
+        + rng.normal(0, 0.12, size=n),
+        0,
+        1,
     )
 
     # probabilistic label (anti-lookup-table)
@@ -89,20 +124,22 @@ def generate_ot_telecom_dataset(n: int, seed: int) -> pd.DataFrame:
     p = sigmoid(-1.0 + 0.9 * risk)
     needs_engineer_review = (rng.random(n) < p).astype(int)
 
-    return pd.DataFrame({
-        "device_type": device_type,
-        "doc_age_days": doc_age_days,
-        "has_drawing_id": has_drawing_id,
-        "fiber_length_m": fiber_length_m,
-        "snr_db": snr_db,
-        "packet_loss_pct": packet_loss_pct,
-        "latency_ms": latency_ms,
-        "path_diverse": path_diverse,
-        "vlan_ok": vlan_ok,
-        "margin_db": margin_db,
-        "spof_risk_score": spof_risk_score,
-        "needs_engineer_review": needs_engineer_review,
-    })
+    return pd.DataFrame(
+        {
+            "device_type": device_type,
+            "doc_age_days": doc_age_days,
+            "has_drawing_id": has_drawing_id,
+            "fiber_length_m": fiber_length_m,
+            "snr_db": snr_db,
+            "packet_loss_pct": packet_loss_pct,
+            "latency_ms": latency_ms,
+            "path_diverse": path_diverse,
+            "vlan_ok": vlan_ok,
+            "margin_db": margin_db,
+            "spof_risk_score": spof_risk_score,
+            "needs_engineer_review": needs_engineer_review,
+        }
+    )
 
 
 # -----------------------------
@@ -118,6 +155,8 @@ FEATURE_REWRITE = {
     "latency_ms": "Latency (ms)",
     "path_diverse": "A/B path diversity present",
     "vlan_ok": "VLAN assignment matches design",
+    "distance_to_worst": "Risk-space distance to worst-case (lower is worse)",
+    "similarity_to_review": "Similarity to historical review centroid (higher is more review-like)",
 }
 
 
@@ -131,11 +170,20 @@ def rewrite_rule_line(line: str) -> str:
     prefix = line.split(feat)[0]
 
     if feat == "margin_db" and op in ("<=", "<") and val <= 3.0:
-        return f"{prefix}{eng} {op} {val:.2f} → Low margin. Re-run test with tighter span / more averaging; confirm setup repeatability."
+        return (
+            f"{prefix}{eng} {op} {val:.2f} → Low margin. "
+            f"Re-run test with tighter span / more averaging; confirm setup repeatability."
+        )
     if feat == "doc_age_days" and op in (">=", ">") and val >= 900:
-        return f"{prefix}{eng} {op} {val:.0f} → Docs stale. Verify as-builts, port maps, BOM; update drawing package."
+        return (
+            f"{prefix}{eng} {op} {val:.0f} → Docs stale. "
+            f"Verify as-builts, port maps, BOM; update drawing package."
+        )
     if feat == "spof_risk_score" and op in (">=", ">") and val >= 0.6:
-        return f"{prefix}{eng} {op} {val:.2f} → SPOF risk. Verify redundant comms paths, conduit diversity, ring design."
+        return (
+            f"{prefix}{eng} {op} {val:.2f} → SPOF risk. "
+            f"Verify redundant comms paths, conduit diversity, ring design."
+        )
 
     return f"{prefix}{eng} {op} {val}"
 
@@ -176,13 +224,18 @@ digraph OT_AUDIT_PIPELINE {
 # CLI + Main pipeline
 # -----------------------------
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(prog="ot_tree_pipeline", description="Deterministic OT telecom tree/forest demo pipeline.")
+    p = argparse.ArgumentParser(
+        prog="ot_tree_pipeline",
+        description="Deterministic OT telecom tree/forest demo pipeline.",
+    )
     p.add_argument("--seed", type=int, default=7, help="Random seed for determinism (default: 7)")
     p.add_argument("--rows", type=int, default=20000, help="Number of synthetic rows to generate (default: 20000)")
     p.add_argument("--out", type=str, default="runs", help="Base output directory (default: runs)")
     return p.parse_args()
 
+
 SEVERITY_RANK = {"P0": 0, "P1": 1, "P2": 2, "INFO": 3}
+
 
 def constraints_for_row(row: pd.Series) -> List[Dict[str, Any]]:
     """
@@ -192,54 +245,70 @@ def constraints_for_row(row: pd.Series) -> List[Dict[str, Any]]:
     findings: List[Dict[str, Any]] = []
 
     if int(row["has_drawing_id"]) == 0:
-        findings.append({
-            "severity": "P0",
-            "finding_code": "MISSING_DRAWING_REF",
-            "engineering_explanation": "No drawing reference present (AutoCAD/Visio sheet ID missing).",
-            "recommended_action": "Add drawing_id / sheet reference; update drawing package before signoff.",
-            "source": "constraint",
-        })
+        findings.append(
+            {
+                "severity": "P0",
+                "finding_code": "MISSING_DRAWING_REF",
+                "engineering_explanation": "No drawing reference present (AutoCAD/Visio sheet ID missing).",
+                "recommended_action": "Add drawing_id / sheet reference; update drawing package before signoff.",
+                "source": "constraint",
+            }
+        )
 
     if float(row["spof_risk_score"]) > 0.6 and int(row["path_diverse"]) == 0:
-        findings.append({
-            "severity": "P0",
-            "finding_code": "SPOF_NO_PATH_DIVERSITY",
-            "engineering_explanation": "High SPOF risk and no A/B path diversity indicated.",
-            "recommended_action": "Verify redundant comms paths, conduit diversity, ring design; document A/B paths.",
-            "source": "constraint",
-        })
+        findings.append(
+            {
+                "severity": "P0",
+                "finding_code": "SPOF_NO_PATH_DIVERSITY",
+                "engineering_explanation": "High SPOF risk and no A/B path diversity indicated.",
+                "recommended_action": "Verify redundant comms paths, conduit diversity, ring design; document A/B paths.",
+                "source": "constraint",
+            }
+        )
 
     if int(row["vlan_ok"]) == 0:
-        findings.append({
-            "severity": "P1",
-            "finding_code": "VLAN_MISMATCH",
-            "engineering_explanation": "VLAN assignment does not match design intent (vlan_ok=0).",
-            "recommended_action": "Validate port maps and switch configuration; update drawings if design changed.",
-            "source": "constraint",
-        })
+        findings.append(
+            {
+                "severity": "P1",
+                "finding_code": "VLAN_MISMATCH",
+                "engineering_explanation": "VLAN assignment does not match design intent (vlan_ok=0).",
+                "recommended_action": "Validate port maps and switch configuration; update drawings if design changed.",
+                "source": "constraint",
+            }
+        )
 
     if float(row["margin_db"]) < 3.0:
-        findings.append({
-            "severity": "P1",
-            "finding_code": "LOW_EMC_MARGIN",
-            "engineering_explanation": f"Low margin to limit line (margin_db={float(row['margin_db']):.2f} dB).",
-            "recommended_action": "Re-run test with tighter span / increased averaging; confirm setup repeatability.",
-            "source": "constraint",
-        })
+        findings.append(
+            {
+                "severity": "P1",
+                "finding_code": "LOW_EMC_MARGIN",
+                "engineering_explanation": f"Low margin to limit line (margin_db={float(row['margin_db']):.2f} dB).",
+                "recommended_action": "Re-run test with tighter span / increased averaging; confirm setup repeatability.",
+                "source": "constraint",
+            }
+        )
 
     if float(row["doc_age_days"]) > 900:
-        findings.append({
-            "severity": "P2",
-            "finding_code": "DOC_STALE",
-            "engineering_explanation": f"Documentation appears stale (doc_age_days={float(row['doc_age_days']):.0f}).",
-            "recommended_action": "Verify as-builts, port maps, BOM; refresh drawing package.",
-            "source": "constraint",
-        })
+        findings.append(
+            {
+                "severity": "P2",
+                "finding_code": "DOC_STALE",
+                "engineering_explanation": f"Documentation appears stale (doc_age_days={float(row['doc_age_days']):.0f}).",
+                "recommended_action": "Verify as-builts, port maps, BOM; refresh drawing package.",
+                "source": "constraint",
+            }
+        )
 
     return findings
 
 
-def write_findings_csv(out_dir: Path, run_id: str, df_test_raw: pd.DataFrame, prob_review: np.ndarray, max_assets: int = 200) -> None:
+def write_findings_csv(
+    out_dir: Path,
+    run_id: str,
+    df_test_raw: pd.DataFrame,
+    prob_review: np.ndarray,
+    max_assets: int = 200,
+) -> None:
     """
     Writes findings.csv: one row per finding per asset.
     Deterministic ordering: highest model score first, then by asset_id.
@@ -252,12 +321,19 @@ def write_findings_csv(out_dir: Path, run_id: str, df_test_raw: pd.DataFrame, pr
 
     with findings_path.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow([
-            "run_id", "asset_id", "device_type",
-            "severity", "finding_code",
-            "engineering_explanation", "recommended_action",
-            "source", "model_score"
-        ])
+        w.writerow(
+            [
+                "run_id",
+                "asset_id",
+                "device_type",
+                "severity",
+                "finding_code",
+                "engineering_explanation",
+                "recommended_action",
+                "source",
+                "model_score",
+            ]
+        )
 
         for pos in selected:
             asset_id = int(df_test_raw.index[pos])
@@ -268,41 +344,68 @@ def write_findings_csv(out_dir: Path, run_id: str, df_test_raw: pd.DataFrame, pr
 
             # If no constraints hit, still include a model triage row
             if not findings:
-                findings.append({
-                    "severity": "INFO",
-                    "finding_code": "NO_CONSTRAINT_FLAGS",
-                    "engineering_explanation": "No deterministic constraint violations detected.",
-                    "recommended_action": "Continue; normal spot-checks apply.",
-                    "source": "constraint",
-                })
+                findings.append(
+                    {
+                        "severity": "INFO",
+                        "finding_code": "NO_CONSTRAINT_FLAGS",
+                        "engineering_explanation": "No deterministic constraint violations detected.",
+                        "recommended_action": "Continue; normal spot-checks apply.",
+                        "source": "constraint",
+                    }
+                )
 
             # Always include a model triage suggestion row (engineer-readable, not “ML says so”)
             if score >= 0.80:
-                model_row = ("P1", "MODEL_HIGH_PRIORITY", "High priority for engineering review based on combined indicators.", "Route to engineer queue; verify docs + redundancy + retest repeatability.")
+                model_row = (
+                    "P1",
+                    "MODEL_HIGH_PRIORITY",
+                    "High priority for engineering review based on combined indicators.",
+                    "Route to engineer queue; verify docs + redundancy + retest repeatability.",
+                )
             elif score >= 0.50:
-                model_row = ("P2", "MODEL_MED_PRIORITY", "Medium priority for review based on combined indicators.", "Check docs and key risk indicators; retest if borderline.")
+                model_row = (
+                    "P2",
+                    "MODEL_MED_PRIORITY",
+                    "Medium priority for review based on combined indicators.",
+                    "Check docs and key risk indicators; retest if borderline.",
+                )
             else:
-                model_row = ("INFO", "MODEL_LOW_PRIORITY", "Low priority for review based on combined indicators.", "Continue; normal checks apply.")
+                model_row = (
+                    "INFO",
+                    "MODEL_LOW_PRIORITY",
+                    "Low priority for review based on combined indicators.",
+                    "Continue; normal checks apply.",
+                )
 
-            findings.append({
-                "severity": model_row[0],
-                "finding_code": model_row[1],
-                "engineering_explanation": f"{model_row[2]} (score={score:.2f})",
-                "recommended_action": model_row[3],
-                "source": "decision_tree",
-            })
+            findings.append(
+                {
+                    "severity": model_row[0],
+                    "finding_code": model_row[1],
+                    "engineering_explanation": f"{model_row[2]} (score={score:.2f})",
+                    "recommended_action": model_row[3],
+                    "source": "decision_tree",
+                }
+            )
 
             findings.sort(key=lambda d: (SEVERITY_RANK.get(d["severity"], 99), d["finding_code"]))
 
             for fd in findings:
-                w.writerow([
-                    run_id, asset_id, str(row["device_type"]),
-                    fd["severity"], fd["finding_code"],
-                    fd["engineering_explanation"], fd["recommended_action"],
-                    fd["source"], f"{score:.4f}"
-                ])
+                w.writerow(
+                    [
+                        run_id,
+                        asset_id,
+                        str(row["device_type"]),
+                        fd["severity"],
+                        fd["finding_code"],
+                        fd["engineering_explanation"],
+                        fd["recommended_action"],
+                        fd["source"],
+                        f"{score:.4f}",
+                    ]
+                )
 
     print(f"Wrote {findings_path}")
+
 
 def write_findings_summary(out_dir: Path) -> None:
     """
@@ -331,6 +434,7 @@ def write_findings_summary(out_dir: Path) -> None:
     summary.to_csv(summary_path, index=False)
     print(f"Wrote {summary_path}")
 
+
 RISK_FEATURES = [
     "doc_age_days",
     "has_drawing_id",
@@ -347,15 +451,16 @@ RISK_FEATURES = [
 # We'll transform everything so that "higher = worse" in risk-space.
 HIGH_IS_WORSE = {
     "doc_age_days": True,
-    "has_drawing_id": False,   # 0 missing is worse -> invert
-    "margin_db": False,        # low margin is worse -> invert
-    "snr_db": False,           # low SNR is worse -> invert
+    "has_drawing_id": False,  # 0 missing is worse -> invert
+    "margin_db": False,  # low margin is worse -> invert
+    "snr_db": False,  # low SNR is worse -> invert
     "packet_loss_pct": True,
     "latency_ms": True,
     "spof_risk_score": True,
-    "path_diverse": False,     # 0 (no diversity) is worse -> invert
-    "vlan_ok": False,          # 0 mismatch is worse -> invert
+    "path_diverse": False,  # 0 (no diversity) is worse -> invert
+    "vlan_ok": False,  # 0 mismatch is worse -> invert
 }
+
 
 def fit_minmax_risk_scaler(df_train_raw: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
     """
@@ -367,6 +472,7 @@ def fit_minmax_risk_scaler(df_train_raw: pd.DataFrame) -> Tuple[pd.Series, pd.Se
     # avoid divide-by-zero if a column is constant
     maxs = maxs.where((maxs - mins) != 0, mins + 1.0)
     return mins, maxs
+
 
 def transform_to_risk_space(df_raw: pd.DataFrame, mins: pd.Series, maxs: pd.Series) -> np.ndarray:
     """
@@ -384,8 +490,8 @@ def transform_to_risk_space(df_raw: pd.DataFrame, mins: pd.Series, maxs: pd.Seri
     invert_cols = [c for c in RISK_FEATURES if not HIGH_IS_WORSE[c]]
     X[invert_cols] = 1.0 - X[invert_cols]
 
-
     return X.to_numpy(dtype=float)
+
 
 def compute_distance_to_worst(risk_X: np.ndarray) -> np.ndarray:
     """
@@ -395,6 +501,7 @@ def compute_distance_to_worst(risk_X: np.ndarray) -> np.ndarray:
     worst = np.ones((risk_X.shape[1],), dtype=float)
     diff = risk_X - worst
     return np.sqrt(np.sum(diff * diff, axis=1))
+
 
 def compute_cosine_similarity_to_centroid(risk_X: np.ndarray, centroid: np.ndarray) -> np.ndarray:
     """
@@ -407,15 +514,17 @@ def compute_cosine_similarity_to_centroid(risk_X: np.ndarray, centroid: np.ndarr
     dots = risk_X @ centroid
     return dots / (x_norm * c_norm)
 
+
 def fit_review_centroid(risk_X_train: np.ndarray, y_train: pd.Series) -> np.ndarray:
     """
     Centroid of risk-space vectors where y_train==1 (review-needed).
     If no positives exist (unlikely), falls back to overall mean.
     """
-    mask = (y_train.to_numpy() == 1)
+    mask = y_train.to_numpy() == 1
     if mask.any():
         return risk_X_train[mask].mean(axis=0)
     return risk_X_train.mean(axis=0)
+
 
 def main():
     args = parse_args()
@@ -441,27 +550,27 @@ def main():
         df.index,
         test_size=0.25,
         random_state=42,
-        stratify=y
+        stratify=y,
     )
 
     df_train_raw = df_raw.loc[idx_train]
-    df_test_raw  = df_raw.loc[idx_test]
+    df_test_raw = df_raw.loc[idx_test]
     y_train = y.loc[idx_train]
-    y_test  = y.loc[idx_test]
+    y_test = y.loc[idx_test]
 
     # ---- NEW: fit scaler on train only, compute risk-space vectors ----
     mins, maxs = fit_minmax_risk_scaler(df_train_raw)
     risk_train = transform_to_risk_space(df_train_raw, mins, maxs)
-    risk_test  = transform_to_risk_space(df_test_raw,  mins, maxs)
+    risk_test = transform_to_risk_space(df_test_raw, mins, maxs)
 
     # ---- NEW: distance_to_worst for ALL rows (train+test) deterministically ----
     dist_train = compute_distance_to_worst(risk_train)
-    dist_test  = compute_distance_to_worst(risk_test)
+    dist_test = compute_distance_to_worst(risk_test)
 
     # ---- NEW: similarity_to_review (cosine sim to centroid of y=1 in TRAIN) ----
     centroid = fit_review_centroid(risk_train, y_train)
     sim_train = compute_cosine_similarity_to_centroid(risk_train, centroid)
-    sim_test  = compute_cosine_similarity_to_centroid(risk_test,  centroid)
+    sim_test = compute_cosine_similarity_to_centroid(risk_test, centroid)
 
     # Attach new engineered features back to raw frames (so they can be used by the tree)
     df_train_raw = df_train_raw.copy()
@@ -474,29 +583,39 @@ def main():
     # Recombine for saving the full dataset artifact (optional but nice)
     df_out = pd.concat([df_train_raw, df_test_raw]).loc[df.index]  # same original ordering
     df_out["needs_engineer_review"] = y
-    df_out.to_csv(out_dir/"synthetic_ot_telecom.csv", index=False)
+    df_out.to_csv(out_dir / "synthetic_ot_telecom.csv", index=False)
 
     # Now build model features from raw + engineered features
-    X_all = pd.get_dummies(df_out.drop(columns=["needs_engineer_review"]), columns=["device_type"], drop_first=True)
+    X_all = pd.get_dummies(
+        df_out.drop(columns=["needs_engineer_review"]),
+        columns=["device_type"],
+        drop_first=True,
+    )
     X_train = X_all.loc[idx_train]
-    X_test  = X_all.loc[idx_test]
-
-    # IMPORTANT: use the engineered raw test rows (includes distance/similarity)
-    df_test_raw = df_test_raw  # keep the earlier engineered df_test_raw
-
-
+    X_test = X_all.loc[idx_test]
 
     # 3) Decision Tree
     tree = DecisionTreeClassifier(
         max_depth=4,
         min_samples_leaf=200,
         min_samples_split=400,
-        random_state=42
+        random_state=42,
     )
     tree.fit(X_train, y_train)
 
+    # ================================
+    # Explainability: export tree rules
+    # ================================
+    rules_simple = export_text(
+        tree,
+        feature_names=list(X_train.columns),
+        decimals=2,
+    )
+    (out_dir / "tree_rules.txt").write_text(rules_simple, encoding="utf-8")
+
     pred = tree.predict(X_test)
     proba = tree.predict_proba(X_test)[:, 1]
+
     write_findings_csv(out_dir, run_id, df_test_raw, proba, max_assets=200)
     write_findings_summary(out_dir)
 
@@ -516,7 +635,7 @@ def main():
         class_names=["no", "yes"],
         filled=True,
         rounded=True,
-        special_characters=True
+        special_characters=True,
     )
 
     plt.figure(figsize=(18, 9))
@@ -527,7 +646,7 @@ def main():
         filled=True,
         rounded=True,
         max_depth=4,
-        fontsize=8
+        fontsize=8,
     )
     plt.tight_layout()
     plt.savefig(out_dir / "tree_matplotlib.png", dpi=200)
@@ -539,7 +658,7 @@ def main():
         max_depth=6,
         min_samples_leaf=100,
         n_jobs=-1,
-        random_state=42
+        random_state=42,
     )
     rf.fit(X_train, y_train)
 
@@ -563,26 +682,25 @@ def main():
         "split": {"test_size": 0.25, "random_state": 42, "stratify": True},
         "tree_params": tree.get_params(),
         "rf_params": rf.get_params(),
-        "metrics": {
-            "tree_auc": tree_auc,
-            "rf_auc": rf_auc
-        },
+        "metrics": {"tree_auc": tree_auc, "rf_auc": rf_auc},
         "outputs": {
             "dataset": str((out_dir / "synthetic_ot_telecom.csv").as_posix()),
             "tree_dot": str((out_dir / "tree.dot").as_posix()),
             "tree_png": str((out_dir / "tree_matplotlib.png").as_posix()),
+            "tree_rules": str((out_dir / "tree_rules.txt").as_posix()),
             "rules_raw": str((out_dir / "rules_raw.txt").as_posix()),
             "rules_engineering": str((out_dir / "rules_engineering.txt").as_posix()),
             "feature_importance": str((out_dir / "feature_importance.csv").as_posix()),
             "workflow_dot": str((out_dir / "workflow.dot").as_posix()),
-        }
+            "findings_csv": str((out_dir / "findings.csv").as_posix()),
+            "findings_summary": str((out_dir / "findings_summary.csv").as_posix()),
+        },
+        "risk_features": RISK_FEATURES,
+        "risk_mins": mins.to_dict(),
+        "risk_maxs": maxs.to_dict(),
+        "review_centroid": centroid.tolist(),
     }
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-
-    manifest["risk_features"] = RISK_FEATURES
-    manifest["risk_mins"] = mins.to_dict()
-    manifest["risk_maxs"] = maxs.to_dict()
-    manifest["review_centroid"] = centroid.tolist()
 
     # 7) Human report
     report = []
@@ -613,6 +731,7 @@ def main():
     print(f" - {out_dir / 'report.md'}")
     print(f" - {out_dir / 'rules_engineering.txt'}")
     print(f" - {out_dir / 'workflow.dot'}")
+    print(f" - {out_dir / 'tree_rules.txt'}")
 
 
 if __name__ == "__main__":
