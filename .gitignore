@@ -24,8 +24,15 @@ Thumbs.db
 reports/
 output/
 out/
-*.json
-*.html
+runs/              # <-- ADD (your audit + tree outputs live here)
+
+# ---- Generated reports (explicit, not blanket) ----
+report.json
+report.md
+routes.csv
+bom.csv
+routes.dxf
+route_preview.png  # <-- ADD (A* visualization PNG)
 
 # ---- IDE / editor configs ----
 .vscode/

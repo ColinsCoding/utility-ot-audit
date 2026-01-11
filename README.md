@@ -81,3 +81,21 @@ python src/odat2/cli.py sample.csv --today 2026-01-08
 ## Security
 - Offline CLI (no network calls / no telemetry).
 - Dependency checks: see `docs/pip-audit.txt`. Dependabot is enabled for weekly updates.
+
+
+## Telecom route optimization (A* → DXF + BOM)
+
+ODAT2 includes a lightweight routing helper that demonstrates telecom design support workflows:
+**layout.json + endpoints.csv → A* routing → AutoCAD-compatible DXF + BOM**.
+
+Run the example:
+
+```bash
+PYTHONPATH=src python -m odat2.cli route-optimize examples/route_optimize/layout.json examples/route_optimize/endpoints.csv \
+  --out-dxf routes.dxf --out-routes-csv routes.csv --out-bom-csv bom.csv
+```
+
+Outputs:
+- `routes.dxf` — LWPOLYLINE routes on layers like `ROUTE_FIBER`, `ROUTE_COPPER`
+- `routes.csv` — per-route status, length, turns, cost
+- `bom.csv` — cable length totals by type (+spare %)

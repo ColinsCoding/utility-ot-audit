@@ -14,7 +14,15 @@ from odat2.validators.doc_confidence import compute_doc_confidence
 
 import pandas as pd
 
+from odat2.telecom.layout import load_layout
+from odat2.telecom.route_optimizer import compute_routes
+from odat2.telecom.dxf_writer import DXFPolyline, write_r12_dxf_polylines
+
 from odat2.validators.uncertainty import monte_carlo_review_priority
+
+from odat2.telecom.viz import plot_routes_preview
+
+
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -144,6 +152,116 @@ def main(
             console.print(f"[{color}]{issue.severity.upper()}[/{color}] {issue.issue_type}: {issue.message}")
 
 
+
+
+@app.command("route-optimize")
+def route_optimize(
+    layout_json: str = typer.Argument(..., help="Path to layout.json describing the routing grid (width/height/obstacles)."),
+    endpoints_csv: str = typer.Argument(..., help="Path to endpoints.csv with from_x,from_y,to_x,to_y,cable_type,route_id."),
+    out_dxf: str = typer.Option("routes.dxf", "--out-dxf", help="Output DXF drawing path (AutoCAD compatible)."),
+    out_routes_csv: str = typer.Option("routes.csv", "--out-routes-csv", help="Per-route results CSV path."),
+    out_bom_csv: str = typer.Option("bom.csv", "--out-bom-csv", help="BOM summary CSV path (length totals per cable type)."),
+    grid_scale_m: float = typer.Option(1.0, "--grid-scale-m", help="Meters per grid cell for length calculations."),
+    spare_pct: float = typer.Option(0.10, "--spare-pct", help="Spare cable percentage (e.g., 0.10 = +10%%)."),
+):
+    """
+    Generate optimal telecom cable routes using A* and export an AutoCAD-compatible DXF.
+
+    Workflow: layout.json + endpoints.csv → A* routing → routes.csv + bom.csv + routes.dxf
+    """
+    layout = load_layout(layout_json)
+    df = pd.read_csv(endpoints_csv)
+
+    required = {"from_x", "from_y", "to_x", "to_y"}
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise typer.BadParameter(f"endpoints_csv is missing required column(s): {', '.join(missing)}")
+
+    # Fill optional columns
+    if "route_id" not in df.columns:
+        df["route_id"] = [f"route_{i+1}" for i in range(len(df))]
+    if "cable_type" not in df.columns:
+        df["cable_type"] = "unknown"
+
+    results = compute_routes(layout, df.to_dict(orient="records"), grid_scale_m=grid_scale_m)
+
+    # Write per-route CSV
+    rows = []
+    polylines = []
+    ok_count = 0
+    for r in results:
+        rows.append({
+            "route_id": r.route_id,
+            "cable_type": r.cable_type,
+            "from_x": r.start[0],
+            "from_y": r.start[1],
+            "to_x": r.goal[0],
+            "to_y": r.goal[1],
+            "status": r.status,
+            "length_m": round(r.length, 3),
+            "cost": round(r.cost, 3) if r.cost != float("inf") else "",
+            "turns": r.turns,
+            "message": r.message,
+        })
+        if r.status == "ok" and r.path:
+            ok_count += 1
+            layer = f"ROUTE_{r.cable_type}".replace(" ", "_").upper()
+            pts = [(p[0] * grid_scale_m, p[1] * grid_scale_m) for p in r.path]
+            polylines.append(DXFPolyline(layer=layer, points=pts, closed=False))
+
+    pd.DataFrame(rows).to_csv(out_routes_csv, index=False)
+
+    # BOM summary
+    bom = {}
+    for r in results:
+        if r.status != "ok":
+            continue
+        bom.setdefault(r.cable_type, 0.0)
+        bom[r.cable_type] += float(r.length)
+
+    bom_rows = []
+    for cable_type, total_len in sorted(bom.items(), key=lambda x: x[0]):
+        with_spare = total_len * (1.0 + float(spare_pct))
+        bom_rows.append({
+            "cable_type": cable_type,
+            "total_length_m": round(total_len, 3),
+            "spare_pct": float(spare_pct),
+            "length_with_spare_m": round(with_spare, 3),
+        })
+    pd.DataFrame(bom_rows).to_csv(out_bom_csv, index=False)
+
+    # DXF output
+    write_r12_dxf_polylines(polylines, out_dxf, units="m")
+
+    console.print(f"[green]✓[/green] Route optimization complete: {ok_count}/{len(results)} route(s) found")
+    console.print(f"[green]✓[/green] DXF: {out_dxf}")
+    console.print(f"[green]✓[/green] Routes CSV: {out_routes_csv}")
+    console.print(f"[green]✓[/green] BOM CSV: {out_bom_csv}")
+
+    # Write a single PNG preview for all successful routes
+    preview_routes = [(r.route_id, r.path) for r in results if r.status == "ok" and r.path]
+    if preview_routes:
+        out_png = "route_preview.png"
+        plot_routes_preview(layout=layout, routes=preview_routes, out_png=out_png, show_steps=False)
+        console.print(f"[green]✓[/green] Preview PNG: {out_png}")
+
+
 if __name__ == "__main__":
+
+    # Backwards-compatible shim:
+    # Historically, this CLI supported `python src/odat2/cli.py <csv_file> --out-json ...`
+    # After adding additional commands, Typer requires an explicit command name.
+    # If the first non-option argument looks like a CSV path, treat it as `main`.
+    import sys as _sys
+    _argv = list(_sys.argv)
+    _known_cmds = {"main", "route-optimize"}
+    _first = None
+    for a in _argv[1:]:
+        if a.startswith("-"):
+            continue
+        _first = a
+        break
+    if _first and (_first.lower().endswith(".csv") or _first.lower().endswith(".tsv")) and _first not in _known_cmds:
+        _sys.argv = [_argv[0], "main"] + _argv[1:]
 
     app()
