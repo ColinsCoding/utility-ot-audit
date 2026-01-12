@@ -1,56 +1,88 @@
-# src/odat2/telecom/viz.py
-from __future__ import annotations
-
-from typing import List, Tuple
-
 import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.colors as colors
 
 
-def _layout_to_grid(layout) -> np.ndarray:
-    """
-    Convert Layout(width,height,obstacles[Rect...]) into a grid:
-    0 = free, 1 = obstacle
-    Assumes obstacle Rect has x0,y0,x1,y1 and is [x0,x1) [y0,y1).
-    """
-    grid = np.zeros((layout.height, layout.width), dtype=int)
-
-    for rect in getattr(layout, "obstacles", []) or []:
-        x0, y0, x1, y1 = int(rect.x0), int(rect.y0), int(rect.x1), int(rect.y1)
-        x0 = max(0, min(layout.width, x0))
-        x1 = max(0, min(layout.width, x1))
-        y0 = max(0, min(layout.height, y0))
-        y1 = max(0, min(layout.height, y1))
-        grid[y0:y1, x0:x1] = 1
-
-    return grid
-
-
-def plot_routes_preview(
+def plot_coverage(
     layout,
-    routes: List[Tuple[str, List[Tuple[int, int]]]],  # (route_id, path)
-    out_png: str,
-    show_steps: bool = False,
-) -> None:
-    grid = _layout_to_grid(layout)
+    cov,
+    sensors,
+    out_png,
+    show_blind_spots=True,
+    title="Coverage Heat Map"
+):
+    """
+    Produce a polished heat-map style coverage visualization.
+    """
 
-    plt.figure(figsize=(7, 5))
-    plt.imshow(grid, cmap="gray_r", origin="upper")
+    # Obstacle mask
+    obs = np.zeros((layout.height, layout.width))
+    for r in getattr(layout, "obstacles", []) or []:
+        obs[int(r.y0):int(r.y1), int(r.x0):int(r.x1)] = 1
 
-    for route_id, path in routes:
-        if not path:
-            continue
-        ys, xs = zip(*[(p[1], p[0]) for p in path])  # convert (x,y) -> (row=y, col=x)
-        plt.plot(xs, ys, "-o", linewidth=2, markersize=2)
-        if show_steps:
-            for i, (x, y) in enumerate(path):
-                plt.text(x, y, f"{i}", fontsize=6)
+    fig, ax = plt.subplots(figsize=(9, 6))
 
-        # label route at start
-        sx, sy = path[0]
-        plt.text(sx, sy, route_id, fontsize=8)
+    # Obstacles (background)
+    ax.imshow(
+        obs,
+        cmap="gray",
+        alpha=0.25,
+        origin="lower"
+    )
 
-    plt.title("A* Routes Preview (obstacles + paths)")
+    # Coverage heat map
+    cov_safe = np.where(cov > 0, cov, np.nan)
+
+    im = ax.imshow(
+        cov_safe,
+        origin="lower",
+        cmap="inferno",
+        alpha=0.9,
+        norm=colors.LogNorm(
+            vmin=max(1e-2, np.nanmin(cov_safe)),
+            vmax=np.nanmax(cov_safe)
+        )
+    )
+
+    # Colorbar
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Coverage Intensity", rotation=90)
+
+    # Sensors
+    if sensors:
+        xs = [s.x for s in sensors]
+        ys = [s.y for s in sensors]
+        ax.scatter(
+            xs,
+            ys,
+            s=80,
+            c="cyan",
+            edgecolors="black",
+            linewidths=0.8,
+            label="Sensors",
+            zorder=3
+        )
+
+    # Blind spots
+    if show_blind_spots:
+        by, bx = np.where((cov <= 0) & (obs == 0))
+        if len(bx):
+            ax.scatter(
+                bx,
+                by,
+                s=6,
+                c="white",
+                alpha=0.25,
+                marker="x",
+                label="Blind spots",
+                zorder=2
+            )
+
+    ax.set_title(title)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.legend(loc="upper right", framealpha=0.85)
+
     plt.tight_layout()
-    plt.savefig(out_png, dpi=200)
+    plt.savefig(out_png, dpi=220)
     plt.close()

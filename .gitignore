@@ -1,71 +1,37 @@
-# ---- Python / Virtualenv ----
-.venv/
-venv/
-__pycache__/
-*.py[cod]
-*.pyo
+# --- Generated outputs / artifacts ---
+out/
+*.dxf
+*.png
+*.csv
+*.log
+*.tgz
+*.tar.gz
+*.bak
 
-# ---- Packaging / build artifacts ----
+# --- Python caches ---
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# --- Local venv ---
+.venv/
+
+# --- Local experiments ---
+scripts/
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
 *.egg-info/
 dist/
 build/
 
-# ---- Test / coverage artifacts ----
-.pytest_cache/
+# Test/coverage outputs
 .coverage
 htmlcov/
+coverage*.json
 
-# ---- OS / editor noise ----
-.DS_Store
-Thumbs.db
-
-# ---- Logs / generated outputs ----
-*.log
-reports/
-output/
-out/
-runs/              # <-- ADD (your audit + tree outputs live here)
-
-# ---- Generated reports (explicit, not blanket) ----
+# Generated reports
 report.json
-report.md
-routes.csv
-bom.csv
-routes.dxf
-route_preview.png  # <-- ADD (A* visualization PNG)
-
-# ---- IDE / editor configs ----
-.vscode/
-.idea/
-
-# Generated artifacts / local outputs
-runs/
-*.png
-*.html
-out.json
-odat_report.json
-report.json
-report.html
-routes.dxf
-routes.csv
-bom.csv
-
-route_preview.png
-coverage.png
-
-# Generated outputs
-*.csv
-*.dxf
-*.png
-*.json
-*.tgz
-*.tar.gz
-
-# Local experiments / backups
-*.bak
-scripts/
-
-# Logs
-*.log
-.patch
 
