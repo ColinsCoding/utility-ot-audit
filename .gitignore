@@ -53,3 +53,19 @@ bom.csv
 route_preview.png
 coverage.png
 
+# Generated outputs
+*.csv
+*.dxf
+*.png
+*.json
+*.tgz
+*.tar.gz
+
+# Local experiments / backups
+*.bak
+scripts/
+
+# Logs
+*.log
+.patch
+
