@@ -20,7 +20,15 @@ from odat2.telecom.dxf_writer import DXFPolyline, write_r12_dxf_polylines
 
 from odat2.validators.uncertainty import monte_carlo_review_priority
 
-from odat2.telecom.viz import plot_routes_preview
+try:
+    from odat2.telecom.viz import plot_routes_preview
+except ImportError:
+    plot_routes_preview = None
+
+
+from odat2.telecom.security.io import load_sensors_csv
+from odat2.telecom.security.coverage import CoverageAnalyzer
+from odat2.telecom.security.viz import plot_coverage
 
 
 
@@ -242,8 +250,63 @@ def route_optimize(
     preview_routes = [(r.route_id, r.path) for r in results if r.status == "ok" and r.path]
     if preview_routes:
         out_png = "route_preview.png"
-        plot_routes_preview(layout=layout, routes=preview_routes, out_png=out_png, show_steps=False)
+        if plot_routes_preview is not None:
+            plot_routes_preview(layout=layout, routes=preview_routes, out_png=out_png, show_steps=False)
         console.print(f"[green]✓[/green] Preview PNG: {out_png}")
+
+@app.command("security-coverage")
+def security_coverage(
+    layout_json: str = typer.Argument(..., help="Path to layout.json describing the site grid + obstacles."),
+    sensors_csv: str = typer.Argument(..., help="Path to sensors.csv (sensor_id,x,y,range_cells,fov_deg,heading_deg)."),
+    out_png: str = typer.Option("coverage.png", "--out-png", help="Output PNG coverage map path."),
+    out_summary_json: str = typer.Option("coverage_summary.json", "--out-summary-json", help="Output summary JSON path."),
+    out_blind_csv: str = typer.Option("blind_spots.csv", "--out-blind-csv", help="Output blind spots CSV path."),
+):
+    """
+    Compute grid-based security coverage with field-of-view and obstacle occlusion.
+
+    Inputs: layout.json + sensors.csv
+    Outputs: coverage.png + coverage_summary.json + blind_spots.csv
+    """
+    layout = load_layout(layout_json)
+    sensors = load_sensors_csv(sensors_csv)
+
+    analyzer = CoverageAnalyzer(layout, sensors)
+    cov = analyzer.coverage_grid()
+    summary = analyzer.summary(cov)
+    blind = analyzer.blind_spots(cov)
+
+    # PNG visualization
+    plot_coverage(layout, cov, sensors, out_png=out_png, show_blind_spots=True)
+
+    # Summary JSON
+    payload = {
+        "width": summary.width,
+        "height": summary.height,
+        "sensors": summary.sensors,
+        "coverage_pct": round(summary.coverage_pct, 3),
+        "covered_cells": summary.covered_cells,
+        "uncovered_cells": summary.uncovered_cells,
+        "single_covered_cells": summary.single_covered_cells,
+        "notes": summary.notes,
+    }
+    Path(out_summary_json).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    # Blind spots CSV
+    import csv as _csv
+    with open(out_blind_csv, "w", newline="", encoding="utf-8") as f:
+        w = _csv.writer(f)
+        w.writerow(["x", "y"])
+        for (x, y) in blind:
+            w.writerow([x, y])
+
+    console.print(f"[green]✓[/green] Coverage PNG: {out_png}")
+    console.print(f"[green]✓[/green] Summary JSON: {out_summary_json}")
+    console.print(f"[green]✓[/green] Blind spots CSV: {out_blind_csv}")
+    console.print(
+        f"[bold]Coverage:[/bold] {summary.coverage_pct:.2f}%  |  "
+        f"Uncovered: {summary.uncovered_cells}  |  Single-covered: {summary.single_covered_cells}"
+    )
 
 
 if __name__ == "__main__":
@@ -254,7 +317,7 @@ if __name__ == "__main__":
     # If the first non-option argument looks like a CSV path, treat it as `main`.
     import sys as _sys
     _argv = list(_sys.argv)
-    _known_cmds = {"main", "route-optimize"}
+    _known_cmds = {"main", "route-optimize", "security-coverage"}
     _first = None
     for a in _argv[1:]:
         if a.startswith("-"):
