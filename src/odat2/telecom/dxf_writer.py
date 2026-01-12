@@ -31,7 +31,7 @@ def write_r12_dxf_polylines(polylines: Iterable[DXFPolyline], out_path: str, *, 
     Note: R12 technically predates LWPOLYLINE; many tools still accept it.
     If you need strict R12 compatibility, swap to POLYLINE/VERTEX/SEQEND.
     """
-    now = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     parts: List[str] = []
     parts.append("0\nSECTION\n2\nHEADER\n")
